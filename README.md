@@ -1,148 +1,386 @@
 # 🎙️ Real-time Speech to Text (Hindi + English)
 
-A Streamlit web app that transcribes speech **in real time** with the **Gemini Live API**. It supports
-multilingual, code-mixed speech (e.g. *"Kal meeting hai, please join on time"*). Every transcription
-is stored in a relational database and managed from a **history dashboard** with full CRUD.
-Saved text can be played back with **Text-to-Speech**.
+A web application that transcribes speech **in real time** using the **Gemini Live API**.
+Speak in Hindi, English or a mix of both (e.g. *"Kal meeting hai, please join on time"*) and the
+words appear on screen as you talk. Every transcription is saved to a relational database and can be
+managed from a **History Dashboard** with full **CRUD** (Create, Read, Update, Delete) operations.
+Saved text can also be played back with **Text-to-Speech**.
 
-## Features
+**Built with:** Python · Streamlit · Gemini Live API · SQLAlchemy · SQLite / PostgreSQL · WebRTC · gTTS
 
-| Area | What it does |
+---
+
+## 📑 Table of Contents
+
+1. [Features](#-features)
+2. [Prerequisites](#-prerequisites)
+3. [Installation](#-installation)
+4. [Configuration](#-configuration)
+5. [Running the App](#-running-the-app)
+6. [How to Use](#-how-to-use)
+7. [Running Tests](#-running-tests)
+8. [Run with Docker](#-run-with-docker)
+9. [Deploy to the Cloud](#-deploy-to-the-cloud-streamlit-community-cloud)
+10. [Project Structure](#-project-structure)
+11. [Architecture](#-architecture)
+12. [Troubleshooting](#-troubleshooting)
+13. [Command Cheat Sheet](#-command-cheat-sheet)
+
+---
+
+## ✨ Features
+
+| Feature | Description |
 | --- | --- |
-| **Live transcription** | Browser mic → WebRTC → server → Gemini Live (`gemini-3.5-transcribe-live`). Interim words appear while you speak, and final text is appended as each phrase completes. |
-| **Multilingual** | Auto language detection handles Hindi / English code-switching. You can also pin the language (`hi-IN`, `en-IN`, `en-US`). |
-| **Clip mode** | Record a clip with `st.audio_input` or upload a file (wav/mp3/m4a/ogg/webm/flac). This is a fallback for networks where WebRTC is blocked. |
-| **Review before save** | Edit the transcript and its title, then save it to the DB or discard it. |
-| **Dashboard (CRUD)** | **C**reate manually · **R**ead with search, source filter and metrics · **U**pdate title/text/language · **D**elete with a confirmation dialog. |
-| **Text-to-Speech** | Listen to any transcript (gTTS; Hindi voice for Devanagari, Indian-English voice otherwise). |
-| **Export** | Download one transcript as `.txt` or the filtered history as `.csv`. |
-| **Long sessions** | Gemini Live sessions are capped at 10 minutes, so the app reconnects transparently every 9 minutes without dropping audio. |
+| **Real-time transcription** | Microphone audio is streamed via WebRTC to Gemini Live (`gemini-3.5-transcribe-live`). Words appear live while you speak. |
+| **Multilingual (Hinglish)** | *Hindi + English mix* mode writes code-mixed speech in Roman script. *Auto-detect* mode supports any language (Hindi in Devanagari). |
+| **Clip mode** | Record a clip in the browser or upload an audio file (wav, mp3, m4a, ogg, webm, flac). |
+| **Review before saving** | Edit the title and text before saving to the database, or discard. |
+| **History Dashboard (CRUD)** | **Create** entries manually, **Read** with search, filters and stats, **Update** title/text/language, **Delete** with a confirmation dialog. |
+| **Text-to-Speech** | Listen to any transcription (Hindi voice for Devanagari, Indian-English voice otherwise). |
+| **Export** | Download a single transcription as `.txt` or the whole history as `.csv`. |
+| **Long sessions** | Automatically reconnects before Gemini's 10-minute session limit without losing audio. |
 
-## Architecture
+---
 
-```
-Browser mic ──WebRTC──► streamlit-webrtc ──av frames──► PcmConverter (16 kHz mono PCM16)
-                                                             │  ~100 ms chunks
-                                                             ▼
-                          LiveTranscriber (background thread + asyncio)
-                             ├─ send:    session.send_realtime_input(audio=…)
-                             └─ receive: interim_input_transcription / input_transcription
-                                                             │
-Streamlit UI ◄── polls final + interim text ─────────────────┘
-     │
-     └── Save ──► TranscriptionRepository (SQLAlchemy) ──► SQLite (local) / PostgreSQL (prod)
-```
+## 🧰 Prerequisites
 
-## Tech stack
+| Requirement | Version / Notes |
+| --- | --- |
+| **Python** | 3.10 or newer → check with `python --version` |
+| **Git** | Any recent version |
+| **Gemini API key** | Free from [Google AI Studio](https://aistudio.google.com/apikey) |
+| **Browser** | Chrome, Edge or Firefox with microphone access |
 
-- **Python 3.10+**, **Streamlit** (UI and multipage navigation)
-- **Gemini Live API** via the `google-genai` SDK
-- **streamlit-webrtc** + **PyAV** for real-time audio capture and resampling
-- **SQLAlchemy 2** with **SQLite** (default) or **PostgreSQL** (`psycopg2`)
-- **gTTS** for Text-to-Speech
-- **pytest** for tests
+---
 
-## Project structure
+## 📦 Installation
 
-```
-├── app.py                    # Entry point: page navigation + sidebar
-├── views/
-│   ├── live.py               # Live mic + clip transcription, review & save
-│   └── dashboard.py          # History dashboard with CRUD, TTS, export
-├── stt/                      # Core package (UI-independent except app_context)
-│   ├── config.py             # Settings from env / .env / Streamlit secrets
-│   ├── database.py           # ORM model + TranscriptionRepository (CRUD)
-│   ├── transcriber.py        # Gemini Live streaming client
-│   ├── audio.py              # Frame/file → 16 kHz PCM16 conversion, chunking
-│   ├── tts.py                # Text-to-Speech
-│   ├── languages.py          # Language options → BCP-47 codes
-│   └── app_context.py        # Streamlit glue: cached repo, API key, helpers
-├── scripts/smoke_test_gemini.py  # End-to-end Gemini check without a mic
-├── tests/                    # Unit tests (DB CRUD, audio, transcript handling)
-├── .streamlit/config.toml
-├── Dockerfile
-├── requirements.txt / requirements-dev.txt
-└── .env.example
-```
-
-## Getting started
+### Step 1 — Clone the repository
 
 ```bash
-# 1. Create a virtual environment and install dependencies
-python -m venv .venv
-# Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
-python -m pip install -r requirements-dev.txt
-
-# 2. Configure
-cp .env.example .env        # then set GEMINI_API_KEY (get one at https://aistudio.google.com/apikey)
-
-# 3. Run
-streamlit run app.py
+git clone https://github.com/<your-username>/realtime-speech-to-text.git
+cd realtime-speech-to-text
 ```
 
-Open http://localhost:8501, choose a language (Auto-detect is the default), click **START**, allow
-microphone access and speak.
+### Step 2 — Create a virtual environment
 
-### Configuration
+**Windows (PowerShell):**
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+**Windows (Command Prompt):**
+```cmd
+python -m venv .venv
+.venv\Scripts\activate.bat
+```
+
+**macOS / Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+> If PowerShell blocks activation, run once:
+> `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+### Step 3 — Install dependencies
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements-dev.txt
+```
+
+> `requirements.txt` holds the app dependencies; `requirements-dev.txt` adds `pytest` for testing.
+
+---
+
+## ⚙️ Configuration
+
+### Step 4 — Create the `.env` file
+
+**Windows:**
+```powershell
+copy .env.example .env
+```
+
+**macOS / Linux:**
+```bash
+cp .env.example .env
+```
+
+### Step 5 — Add your Gemini API key
+
+Open `.env` and set your key:
+
+```env
+GEMINI_API_KEY=your-gemini-api-key-here
+```
+
+> 🔒 `.env` is listed in `.gitignore`, so your key is never committed to GitHub.
+> You can also paste the key into the app's sidebar instead (kept only for that browser session).
+
+### All configuration options
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | – | Required. You can also enter it in the sidebar (kept for the session only). |
-| `GEMINI_LIVE_MODEL` | `gemini-3.5-transcribe-live` | Any Live-API model that supports input transcription. |
-| `DATABASE_URL` | `sqlite:///data/transcriptions.db` | Any SQLAlchemy URL, e.g. `postgresql://user:pass@host:5432/db`. |
-| `TURN_URL`, `TURN_USERNAME`, `TURN_CREDENTIAL` | – | Optional TURN server for WebRTC on cloud hosts or behind strict NATs. |
+| `GEMINI_API_KEY` | – | **Required.** Your Gemini API key. |
+| `GEMINI_LIVE_MODEL` | `gemini-3.5-transcribe-live` | Gemini Live model used for transcription. |
+| `DATABASE_URL` | `sqlite:///data/transcriptions.db` | Database connection URL. SQLite locally; PostgreSQL in production, e.g. `postgresql://user:password@host:5432/dbname`. |
+| `TURN_URL` | – | Optional TURN server for WebRTC (needed on some cloud hosts / networks). |
+| `TURN_USERNAME` | – | TURN username. |
+| `TURN_CREDENTIAL` | – | TURN password. |
 
-Values are read from environment variables, then `.env`, then `.streamlit/secrets.toml`.
+Settings are read in this order: **environment variables → `.env` file → `.streamlit/secrets.toml`**.
 
-## Tests
+---
+
+## 🚀 Running the App
+
+### Step 6 — Start the application
+
+```bash
+python -m streamlit run app.py
+```
+
+### Step 7 — Open in your browser
+
+```
+http://localhost:8501
+```
+
+The SQLite database (`data/transcriptions.db`) and its table are created automatically on first run.
+
+**Optional start options:**
+
+```bash
+# Run on a different port
+python -m streamlit run app.py --server.port 8080
+
+# Make it reachable from other devices on your network
+python -m streamlit run app.py --server.address 0.0.0.0
+```
+
+> 🎤 Browsers only allow microphone access on `localhost` or over **HTTPS**.
+
+**Stop the app:** press `Ctrl + C` in the terminal.
+
+---
+
+## 🧭 How to Use
+
+### 1. Live Transcription (real-time)
+1. Open the **Live Transcription** page (default page).
+2. Choose the **Spoken language**:
+   - **Hindi + English mix (Hinglish)** — recommended for code-mixed speech → `Kal meeting hai, please join on time.`
+   - **Auto-detect any language** — Hindi is written in Devanagari → `कल मीटिंग है, प्लीज जॉइन ऑन टाइम।`
+   - **Hindi**, **English (India)**, **English (US)** — single language.
+3. In the **🔴 Live microphone** tab, click **START** and allow microphone access.
+4. Speak — text appears live (grey italic text = words still being recognised).
+5. Click **STOP** when done.
+6. Review/edit the title and text, then click **💾 Save to history** (or **🗑️ Discard**).
+7. Click **🔊 Listen** to hear the text read aloud.
+
+### 2. Record or Upload a Clip
+1. Open the **📼 Record or upload a clip** tab.
+2. Record using the built-in recorder, **or** upload an audio file.
+3. Click **Transcribe clip**, then review and save as above.
+
+### 3. History Dashboard (CRUD)
+| Operation | How |
+| --- | --- |
+| **Create** | Expand **➕ Add a transcription manually**, fill the form, click **Create**. |
+| **Read** | Browse the table; use the **search box** and **source filter**; view stats at the top. |
+| **Update** | Click a row in the table → edit in the form below → **💾 Save changes**. |
+| **Delete** | Click a row → **🗑️ Delete** → confirm in the dialog. |
+| **Listen** | Click a row → **🔊 Listen**. |
+| **Export** | **⬇️ Download .txt** for one record, **⬇️ Export all as CSV** for the list. |
+
+---
+
+## 🧪 Running Tests
+
+### Unit tests (no API key needed)
 
 ```bash
 python -m pytest
-python -m scripts.smoke_test_gemini "Kal meeting hai, please join on time"   # needs GEMINI_API_KEY
 ```
 
-The smoke test synthesises speech with gTTS, streams it through Gemini Live and prints the transcript.
-It checks the whole pipeline without a microphone.
+Covers database CRUD, input validation, audio conversion and transcript handling.
 
-## Deployment
+### End-to-end Gemini test (no microphone needed)
 
-### Streamlit Community Cloud (free)
-1. Push this repo to GitHub.
-2. Create a free PostgreSQL database (e.g. [Neon](https://neon.tech) or [Supabase](https://supabase.com)).
-3. On [share.streamlit.io](https://share.streamlit.io), create an app pointing at `app.py`.
-4. Under **Settings → Secrets**, add:
+```bash
+python -m scripts.smoke_test_gemini "Kal meeting hai, please join on time"
+```
+
+This generates speech from the sentence, streams it to Gemini Live and prints the transcript —
+a quick way to confirm your API key and model work. Expected output:
+
+```
+Model:      gemini-3.5-transcribe-live
+Input:      Kal meeting hai, please join on time  (3.1s of audio)
+Transcript: ...
+```
+
+---
+
+## 🐳 Run with Docker
+
+```bash
+# Build the image
+docker build -t realtime-speech-to-text .
+
+# Run (SQLite inside the container)
+docker run -p 8501:8501 -e GEMINI_API_KEY=your-key realtime-speech-to-text
+
+# Run with PostgreSQL
+docker run -p 8501:8501 \
+  -e GEMINI_API_KEY=your-key \
+  -e DATABASE_URL=postgresql://user:password@host:5432/dbname \
+  realtime-speech-to-text
+```
+
+Open `http://localhost:8501`. The container respects the `$PORT` variable, so it works on
+Render, Railway and Google Cloud Run without changes.
+
+---
+
+## ☁️ Deploy to the Cloud (Streamlit Community Cloud)
+
+### Step 1 — Push the code to GitHub
+
+```bash
+git init
+git add .
+git commit -m "Real-time speech to text with Gemini Live and Streamlit"
+git branch -M main
+git remote add origin https://github.com/<your-username>/realtime-speech-to-text.git
+git push -u origin main
+```
+
+### Step 2 — Create a free PostgreSQL database
+
+1. Sign up at [Neon](https://neon.tech) (or [Supabase](https://supabase.com)).
+2. Create a project and copy the **connection string**, e.g.
+   `postgresql://user:password@ep-xxxx.aws.neon.tech/neondb?sslmode=require`
+
+> Use PostgreSQL in the cloud — the app's local SQLite file would be erased whenever the app restarts.
+
+### Step 3 — Deploy the app
+
+1. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub.
+2. Click **Create app** → select your repository, branch `main`, main file `app.py`.
+3. Open **Advanced settings → Secrets** and paste:
+
    ```toml
-   GEMINI_API_KEY = "..."
-   DATABASE_URL = "postgresql://..."
-   # Recommended for WebRTC on cloud hosts (e.g. free TURN from metered.ca / Twilio):
-   TURN_URL = "turn:..."
-   TURN_USERNAME = "..."
-   TURN_CREDENTIAL = "..."
+   GEMINI_API_KEY = "your-gemini-api-key"
+   DATABASE_URL = "postgresql://user:password@host/dbname?sslmode=require"
+
+   # Recommended for the live microphone on cloud hosting (free TURN e.g. from metered.ca)
+   TURN_URL = "turn:your-turn-server:80"
+   TURN_USERNAME = "your-turn-username"
+   TURN_CREDENTIAL = "your-turn-password"
    ```
 
-### Docker (Render, Railway, Cloud Run, ...)
-```bash
-docker build -t speech-to-text .
-docker run -p 8501:8501 -e GEMINI_API_KEY=... -e DATABASE_URL=postgresql://... speech-to-text
+4. Click **Deploy**. You get a public URL like `https://realtime-speech-to-text.streamlit.app`.
+
+> If the live microphone **START** button keeps spinning on the cloud, add the TURN settings above.
+> The **Record or upload a clip** tab works without TURN.
+
+---
+
+## 🗂️ Project Structure
+
 ```
-The container honours `$PORT` when the host injects one.
+realtime-speech-to-text/
+├── app.py                      # Entry point: page navigation + sidebar
+├── views/
+│   ├── live.py                 # Live mic + clip transcription, review & save
+│   └── dashboard.py            # History dashboard: CRUD, search, TTS, export
+├── stt/                        # Core application package
+│   ├── config.py               # Settings from env / .env / Streamlit secrets
+│   ├── database.py             # ORM model + repository with CRUD operations
+│   ├── transcriber.py          # Gemini Live real-time streaming client
+│   ├── audio.py                # Audio conversion to 16 kHz mono PCM, chunking
+│   ├── tts.py                  # Text-to-Speech
+│   ├── languages.py            # Language options → Gemini language codes
+│   └── app_context.py          # Shared Streamlit helpers (DB, API key, toasts)
+├── scripts/
+│   └── smoke_test_gemini.py    # End-to-end Gemini test without a microphone
+├── tests/                      # Unit tests (pytest)
+├── .streamlit/config.toml      # Streamlit settings and theme
+├── .env.example                # Configuration template
+├── requirements.txt            # App dependencies
+├── requirements-dev.txt        # App + test dependencies
+├── Dockerfile                  # Container image for cloud deployment
+└── pyproject.toml              # Project metadata + pytest config
+```
 
-> Use PostgreSQL in production. Container filesystems on most free hosts are ephemeral, so a SQLite
-> file would be wiped on redeploy.
+### Database schema — `transcriptions` table
 
-## Notes & limitations
+| Column | Type | Description |
+| --- | --- | --- |
+| `id` | Integer (PK) | Auto-increment ID |
+| `title` | String(200) | Transcription title |
+| `text` | Text | Transcribed text |
+| `language` | String(20) | Language setting used (`hi-IN+en-IN`, `auto`, `hi-IN`, ...) |
+| `source` | String(20) | `live`, `clip` or `manual` |
+| `duration_seconds` | Float | Length of the recorded audio |
+| `created_at` | DateTime | Created timestamp (UTC) |
+| `updated_at` | DateTime | Last updated timestamp (UTC) |
 
-- **WebRTC connectivity:** on some networks the browser cannot reach the server without a TURN
-  server. If **START** spins forever, configure TURN or use the **Record or upload a clip** tab, which
-  uses plain HTTP.
-- **Microphone access** requires HTTPS (or `localhost`).
-- Speaker diarization and word-level timestamps are not supported by Gemini live transcription.
+---
 
-## Troubleshooting
+## 🏗️ Architecture
 
-- **`DLL load failed ... Application Control policy has blocked this file`** (Windows Smart App
-  Control blocking SQLAlchemy's optional compiled extension): reinstall SQLAlchemy as pure Python:
-  ```powershell
-  $env:DISABLE_SQLALCHEMY_CEXT='1'; python -m pip install --force-reinstall --no-deps --no-binary sqlalchemy sqlalchemy
-  ```
-- **`pip.exe` blocked by policy:** call pip as `python -m pip ...` instead.
+```
+Browser microphone
+      │  WebRTC
+      ▼
+streamlit-webrtc ──► PcmConverter (resample to 16 kHz mono PCM16, 100 ms chunks)
+                              │
+                              ▼
+            LiveTranscriber (background thread + asyncio)
+              ├── sends audio  ──► Gemini Live API
+              └── receives     ◄── interim + final transcripts
+                              │
+                              ▼
+         Streamlit UI (shows live text) ──► Save ──► SQLAlchemy ──► SQLite / PostgreSQL
+```
+
+---
+
+## 🛠️ Troubleshooting
+
+| Problem | Solution |
+| --- | --- |
+| `Add your Gemini API key` warning | Set `GEMINI_API_KEY` in `.env` and restart, or paste the key in the sidebar. |
+| Microphone permission not asked | Use `http://localhost:8501` or an HTTPS URL; check the browser's site permissions. |
+| **START** keeps spinning | WebRTC is blocked by the network — configure `TURN_*` settings or use the clip tab. |
+| `No speech was detected` | Speak closer to the microphone and check the correct input device is selected. |
+| Model not found error | Set `GEMINI_LIVE_MODEL` in `.env` to a Live model available for your key. |
+| `pip.exe` blocked by policy (Windows) | Use `python -m pip ...` instead of `pip ...`. |
+| `DLL load failed ... Application Control policy` (Windows Smart App Control) | Reinstall SQLAlchemy as pure Python: <br>`$env:DISABLE_SQLALCHEMY_CEXT='1'; python -m pip install --force-reinstall --no-deps --no-binary sqlalchemy sqlalchemy` |
+| Port 8501 already in use | `python -m streamlit run app.py --server.port 8502` |
+
+---
+
+## 📋 Command Cheat Sheet
+
+| Task | Command |
+| --- | --- |
+| Create virtual env | `python -m venv .venv` |
+| Activate (Windows) | `.venv\Scripts\Activate.ps1` |
+| Activate (macOS/Linux) | `source .venv/bin/activate` |
+| Install dependencies | `python -m pip install -r requirements-dev.txt` |
+| Create config | `copy .env.example .env` (Windows) / `cp .env.example .env` |
+| **Start the app** | **`python -m streamlit run app.py`** |
+| Open the app | `http://localhost:8501` |
+| Run unit tests | `python -m pytest` |
+| Test Gemini end-to-end | `python -m scripts.smoke_test_gemini` |
+| Docker build | `docker build -t realtime-speech-to-text .` |
+| Docker run | `docker run -p 8501:8501 -e GEMINI_API_KEY=your-key realtime-speech-to-text` |
+| Stop the app | `Ctrl + C` |
