@@ -29,6 +29,14 @@ SESSION_ROTATE_SECONDS = 9 * 60  # reconnect before the 10-minute Live session l
 _STOP = None  # queue sentinel
 
 
+def transcription_config(language_codes: list[str] | None) -> types.LiveConnectConfig:
+    """Live session config for transcription-only (text) output."""
+    return types.LiveConnectConfig(
+        response_modalities=[types.Modality.TEXT],
+        input_audio_transcription=types.AudioTranscriptionConfig(language_codes=list(language_codes or [])),
+    )
+
+
 class LiveTranscriber:
     def __init__(
         self,
@@ -141,15 +149,9 @@ class LiveTranscriber:
             logger.exception("Gemini Live session failed")
             self._error = f"{type(exc).__name__}: {exc}"
 
-    def _build_config(self) -> types.LiveConnectConfig:
-        return types.LiveConnectConfig(
-            response_modalities=[types.Modality.TEXT],
-            input_audio_transcription=types.AudioTranscriptionConfig(language_codes=self._language_codes),
-        )
-
     async def _main(self) -> None:
         client = genai.Client(api_key=self._api_key, http_options={"api_version": "v1beta"})
-        config = self._build_config()
+        config = transcription_config(self._language_codes)
         finished = False
         while not finished:
             finished = await self._run_session(client, config)

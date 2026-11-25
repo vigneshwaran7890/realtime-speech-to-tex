@@ -35,9 +35,6 @@ class Settings:
     gemini_api_key: str | None
     live_model: str
     database_url: str
-    turn_url: str | None
-    turn_username: str | None
-    turn_credential: str | None
 
 
 @lru_cache(maxsize=1)
@@ -46,7 +43,4 @@ def get_settings() -> Settings:
         gemini_api_key=_read("GEMINI_API_KEY") or _read("GOOGLE_API_KEY"),
         live_model=_read("GEMINI_LIVE_MODEL", DEFAULT_LIVE_MODEL),
         database_url=_read("DATABASE_URL", DEFAULT_DATABASE_URL),
-        turn_url=_read("TURN_URL"),
-        turn_username=_read("TURN_USERNAME"),
-        turn_credential=_read("TURN_CREDENTIAL"),
     )

@@ -6,7 +6,7 @@ words appear on screen as you talk. Every transcription is saved to a relational
 managed from a **History Dashboard** with full **CRUD** (Create, Read, Update, Delete) operations.
 Saved text can also be played back with **Text-to-Speech**.
 
-**Built with:** Python · Streamlit · Gemini Live API · SQLAlchemy · SQLite / PostgreSQL · WebRTC · gTTS
+**Built with:** Python · Streamlit · Gemini Live API · SQLAlchemy · SQLite / PostgreSQL · Web Audio API · gTTS
 
 ---
 
@@ -32,7 +32,7 @@ Saved text can also be played back with **Text-to-Speech**.
 
 | Feature | Description |
 | --- | --- |
-| **Real-time transcription** | Microphone audio is streamed via WebRTC to Gemini Live (`gemini-3.5-transcribe-live`). Words appear live while you speak. |
+| **Real-time transcription** | The browser streams microphone audio over a WebSocket straight to Gemini Live (`gemini-3.5-transcribe-live`) using a secure single-use token. Words appear live while you speak. |
 | **Multilingual (Hinglish)** | *Hindi + English mix* mode writes code-mixed speech in Roman script. *Auto-detect* mode supports any language (Hindi in Devanagari). |
 | **Clip mode** | Record a clip in the browser or upload an audio file (wav, mp3, m4a, ogg, webm, flac). |
 | **Review before saving** | Edit the title and text before saving to the database, or discard. |
@@ -129,11 +129,6 @@ GEMINI_API_KEY=your-gemini-api-key-here
 | `GEMINI_API_KEY` | – | **Required.** Your Gemini API key. |
 | `GEMINI_LIVE_MODEL` | `gemini-3.5-transcribe-live` | Gemini Live model used for transcription. |
 | `DATABASE_URL` | `sqlite:///data/transcriptions.db` | Database connection URL. SQLite locally; PostgreSQL in production, e.g. `postgresql://user:password@host:5432/dbname`. |
-| `HF_TOKEN` | – | TURN relay via a free Hugging Face token (**needed for the live mic on cloud hosts**). |
-| `CLOUDFLARE_TURN_KEY_ID` / `CLOUDFLARE_TURN_KEY_API_TOKEN` | – | TURN relay via Cloudflare Realtime (alternative to `HF_TOKEN`). |
-| `TURN_URL` | – | Any TURN server (comma-separated URLs allowed), e.g. from Metered. |
-| `TURN_USERNAME` | – | TURN username. |
-| `TURN_CREDENTIAL` | – | TURN password. |
 
 Settings are read in this order: **environment variables → `.env` file → `.streamlit/secrets.toml`**.
 
@@ -179,9 +174,9 @@ python -m streamlit run app.py --server.address 0.0.0.0
    - **Hindi + English mix (Hinglish)** — recommended for code-mixed speech → `Kal meeting hai, please join on time.`
    - **Auto-detect any language** — Hindi is written in Devanagari → `कल मीटिंग है, प्लीज जॉइन ऑन टाइम।`
    - **Hindi**, **English (India)**, **English (US)** — single language.
-3. In the **🔴 Live microphone** tab, click **START** and allow microphone access.
+3. In the **🔴 Live microphone** tab, click **Start recording** and allow microphone access.
 4. Speak — text appears live (grey italic text = words still being recognised).
-5. Click **STOP** when done.
+5. Click **Stop recording** when done.
 6. Review/edit the title and text, then click **💾 Save to history** (or **🗑️ Discard**).
 7. Click **🔊 Listen** to hear the text read aloud.
 
@@ -280,32 +275,12 @@ git push -u origin main
    ```toml
    GEMINI_API_KEY = "your-gemini-api-key"
    DATABASE_URL = "postgresql://user:password@host/dbname?sslmode=require"
-
-   # Recommended for the live microphone on cloud hosting (free TURN e.g. from metered.ca)
-   TURN_URL = "turn:your-turn-server:80"
-   TURN_USERNAME = "your-turn-username"
-   TURN_CREDENTIAL = "your-turn-password"
    ```
 
 4. Click **Deploy**. You get a public URL like `https://realtime-speech-to-text.streamlit.app`.
 
-> If the live microphone **START** button keeps spinning on the cloud, add the TURN settings above.
-> The **Record or upload a clip** tab works without TURN.
-
-### Why a TURN server is needed
-
-The live microphone uses WebRTC, which streams audio over UDP. Cloud platforms such as **Render**
-only route HTTP/TCP traffic to your app, so the browser cannot reach the server directly and shows
-*"Connection is taking longer than expected"*. A **TURN relay** fixes this: both the browser and the
-server connect *out* to the relay, which forwards the audio.
-
-The easiest free option is a **Hugging Face token**:
-1. Create a free account at [huggingface.co](https://huggingface.co).
-2. Go to **Settings → Access Tokens → Create new token** (type **Read**) and copy it.
-3. Add it as an environment variable on your host: `HF_TOKEN=hf_xxxxxxxx`.
-
-Alternatives: Cloudflare Realtime TURN (`CLOUDFLARE_TURN_KEY_ID` + `CLOUDFLARE_TURN_KEY_API_TOKEN`)
-or any TURN server (`TURN_URL`, `TURN_USERNAME`, `TURN_CREDENTIAL`).
+> No extra networking setup (STUN/TURN) is needed — the live microphone uses a standard HTTPS/WebSocket
+> connection from the browser to Gemini, so it works on any host.
 
 ## ☁️ Deploy to Render (Docker)
 
@@ -317,7 +292,6 @@ or any TURN server (`TURN_URL`, `TURN_USERNAME`, `TURN_CREDENTIAL`).
    | --- | --- |
    | `GEMINI_API_KEY` | your Gemini API key |
    | `DATABASE_URL` | your Neon PostgreSQL URL |
-   | `HF_TOKEN` | your Hugging Face token (TURN relay for the live mic) |
 
 4. Click **Deploy**. Your app is live at `https://<service-name>.onrender.com`.
 
@@ -336,7 +310,10 @@ realtime-speech-to-text/
 ├── stt/                        # Core application package
 │   ├── config.py               # Settings from env / .env / Streamlit secrets
 │   ├── database.py             # ORM model + repository with CRUD operations
-│   ├── transcriber.py          # Gemini Live real-time streaming client
+│   ├── transcriber.py          # Gemini Live client (server-side, used for clips)
+│   ├── live_token.py           # Single-use ephemeral tokens for browser streaming
+│   ├── live_mic/               # Custom Streamlit component: browser mic → Gemini Live
+│   │   └── frontend/index.html #   AudioWorklet capture, WebSocket streaming, live text
 │   ├── audio.py                # Audio conversion to 16 kHz mono PCM, chunking
 │   ├── tts.py                  # Text-to-Speech
 │   ├── languages.py            # Language options → Gemini language codes
@@ -370,19 +347,27 @@ realtime-speech-to-text/
 ## 🏗️ Architecture
 
 ```
-Browser microphone
-      │  WebRTC
-      ▼
-streamlit-webrtc ──► PcmConverter (resample to 16 kHz mono PCM16, 100 ms chunks)
-                              │
-                              ▼
-            LiveTranscriber (background thread + asyncio)
-              ├── sends audio  ──► Gemini Live API
-              └── receives     ◄── interim + final transcripts
-                              │
-                              ▼
-         Streamlit UI (shows live text) ──► Save ──► SQLAlchemy ──► SQLite / PostgreSQL
+LIVE MICROPHONE
+                         ① request single-use token
+ Browser (live_mic) ───────────────────────────────► Streamlit server ──► Gemini (auth_tokens.create)
+   │  AudioWorklet: mic → 16 kHz PCM16, 100 ms chunks     (API key never leaves the server)
+   │
+   │  ② WebSocket (wss://…BidiGenerateContentConstrained?access_token=…)
+   ├──────────── audio ────────────►  Gemini Live API
+   ◄──── interim + final transcripts ─┘    (shown live in the browser)
+   │
+   │  ③ on Stop: final text sent back to Python
+   ▼
+ Review & edit ──► Save ──► SQLAlchemy ──► SQLite / PostgreSQL ◄── History Dashboard (CRUD)
+
+CLIP MODE
+ Recorded / uploaded file ──► PyAV decode → 16 kHz PCM ──► LiveTranscriber (server) ──► Gemini Live
 ```
+
+**Why the browser talks to Gemini directly:** streaming audio *through* the server would need WebRTC,
+which requires UDP or a TURN relay that most cloud hosts (e.g. Render) don't support. A direct
+WebSocket works everywhere, has the lowest latency, and stays secure because the browser only ever
+receives a short-lived, single-use token locked to this model and configuration.
 
 ---
 
@@ -392,7 +377,7 @@ streamlit-webrtc ──► PcmConverter (resample to 16 kHz mono PCM16, 100 ms c
 | --- | --- |
 | `Add your Gemini API key` warning | Set `GEMINI_API_KEY` in `.env` and restart, or paste the key in the sidebar. |
 | Microphone permission not asked | Use `http://localhost:8501` or an HTTPS URL; check the browser's site permissions. |
-| **START** keeps spinning | WebRTC is blocked by the network — configure `TURN_*` settings or use the clip tab. |
+| `Connection to Gemini closed unexpectedly` | Check the API key and model name; make sure the network allows WebSocket connections to `generativelanguage.googleapis.com`. |
 | `No speech was detected` | Speak closer to the microphone and check the correct input device is selected. |
 | Model not found error | Set `GEMINI_LIVE_MODEL` in `.env` to a Live model available for your key. |
 | `pip.exe` blocked by policy (Windows) | Use `python -m pip ...` instead of `pip ...`. |

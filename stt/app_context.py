@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 import streamlit as st
 
 from stt.config import get_settings
@@ -41,20 +39,6 @@ def render_sidebar() -> None:
         st.caption(f"Model: `{settings.live_model}`")
         backend = settings.database_url.split(":", 1)[0]
         st.caption(f"Database: `{backend}`")
-        st.caption(f"WebRTC relay: {_turn_provider()}")
-
-
-def _turn_provider() -> str:
-    """Human-readable name of the TURN relay that the live microphone will use."""
-    if get_settings().turn_url:
-        return "`custom TURN`"
-    if os.getenv("CLOUDFLARE_TURN_KEY_ID") and os.getenv("CLOUDFLARE_TURN_KEY_API_TOKEN"):
-        return "`Cloudflare TURN`"
-    if os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN"):
-        return "`Twilio TURN`"
-    if os.getenv("HF_TOKEN"):
-        return "`Hugging Face TURN`"
-    return "⚠️ `none (STUN only)` - set HF_TOKEN for cloud hosting"
 
 
 def require_api_key() -> str:
@@ -63,26 +47,6 @@ def require_api_key() -> str:
         st.warning("Add your Gemini API key in the sidebar (or set `GEMINI_API_KEY`) to start transcribing.", icon="🔑")
         st.stop()
     return api_key
-
-
-def rtc_configuration() -> dict | None:
-    """ICE servers for WebRTC.
-
-    With a manual ``TURN_URL`` (comma-separated URLs allowed) that server is used. Otherwise ``None``
-    lets streamlit-webrtc pick a TURN provider from its own env vars: ``CLOUDFLARE_TURN_KEY_ID`` +
-    ``CLOUDFLARE_TURN_KEY_API_TOKEN``, ``TWILIO_ACCOUNT_SID`` + ``TWILIO_AUTH_TOKEN`` or ``HF_TOKEN``
-    (falling back to STUN only). A TURN relay is required on hosts such as Render that block UDP.
-    """
-    settings = get_settings()
-    if not settings.turn_url:
-        return None
-    turn_urls = [url.strip() for url in settings.turn_url.split(",") if url.strip()]
-    return {
-        "iceServers": [
-            {"urls": ["stun:stun.l.google.com:19302"]},
-            {"urls": turn_urls, "username": settings.turn_username, "credential": settings.turn_credential},
-        ]
-    }
 
 
 @st.cache_data(show_spinner="Generating speech...", max_entries=64)
