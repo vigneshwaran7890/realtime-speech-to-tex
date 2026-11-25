@@ -48,9 +48,10 @@ class Stats:
 
 
 def _normalize_url(url: str) -> str:
-    # Hosted Postgres providers often hand out `postgres://`, which SQLAlchemy no longer accepts.
-    if url.startswith("postgres://"):
-        return "postgresql://" + url[len("postgres://") :]
+    """Route plain Postgres URLs (`postgres://`, `postgresql://`) to the psycopg 3 driver."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix) :]
     return url
 
 
