@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import streamlit as st
 
 from stt.config import get_settings
@@ -39,6 +41,20 @@ def render_sidebar() -> None:
         st.caption(f"Model: `{settings.live_model}`")
         backend = settings.database_url.split(":", 1)[0]
         st.caption(f"Database: `{backend}`")
+        st.caption(f"WebRTC relay: {_turn_provider()}")
+
+
+def _turn_provider() -> str:
+    """Human-readable name of the TURN relay that the live microphone will use."""
+    if get_settings().turn_url:
+        return "`custom TURN`"
+    if os.getenv("CLOUDFLARE_TURN_KEY_ID") and os.getenv("CLOUDFLARE_TURN_KEY_API_TOKEN"):
+        return "`Cloudflare TURN`"
+    if os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN"):
+        return "`Twilio TURN`"
+    if os.getenv("HF_TOKEN"):
+        return "`Hugging Face TURN`"
+    return "⚠️ `none (STUN only)` - set HF_TOKEN for cloud hosting"
 
 
 def require_api_key() -> str:
