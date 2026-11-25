@@ -129,7 +129,9 @@ GEMINI_API_KEY=your-gemini-api-key-here
 | `GEMINI_API_KEY` | – | **Required.** Your Gemini API key. |
 | `GEMINI_LIVE_MODEL` | `gemini-3.5-transcribe-live` | Gemini Live model used for transcription. |
 | `DATABASE_URL` | `sqlite:///data/transcriptions.db` | Database connection URL. SQLite locally; PostgreSQL in production, e.g. `postgresql://user:password@host:5432/dbname`. |
-| `TURN_URL` | – | Optional TURN server for WebRTC (needed on some cloud hosts / networks). |
+| `HF_TOKEN` | – | TURN relay via a free Hugging Face token (**needed for the live mic on cloud hosts**). |
+| `CLOUDFLARE_TURN_KEY_ID` / `CLOUDFLARE_TURN_KEY_API_TOKEN` | – | TURN relay via Cloudflare Realtime (alternative to `HF_TOKEN`). |
+| `TURN_URL` | – | Any TURN server (comma-separated URLs allowed), e.g. from Metered. |
 | `TURN_USERNAME` | – | TURN username. |
 | `TURN_CREDENTIAL` | – | TURN password. |
 
@@ -289,6 +291,37 @@ git push -u origin main
 
 > If the live microphone **START** button keeps spinning on the cloud, add the TURN settings above.
 > The **Record or upload a clip** tab works without TURN.
+
+### Why a TURN server is needed
+
+The live microphone uses WebRTC, which streams audio over UDP. Cloud platforms such as **Render**
+only route HTTP/TCP traffic to your app, so the browser cannot reach the server directly and shows
+*"Connection is taking longer than expected"*. A **TURN relay** fixes this: both the browser and the
+server connect *out* to the relay, which forwards the audio.
+
+The easiest free option is a **Hugging Face token**:
+1. Create a free account at [huggingface.co](https://huggingface.co).
+2. Go to **Settings → Access Tokens → Create new token** (type **Read**) and copy it.
+3. Add it as an environment variable on your host: `HF_TOKEN=hf_xxxxxxxx`.
+
+Alternatives: Cloudflare Realtime TURN (`CLOUDFLARE_TURN_KEY_ID` + `CLOUDFLARE_TURN_KEY_API_TOKEN`)
+or any TURN server (`TURN_URL`, `TURN_USERNAME`, `TURN_CREDENTIAL`).
+
+## ☁️ Deploy to Render (Docker)
+
+1. On [render.com](https://render.com) click **New → Web Service** and connect your GitHub repo.
+2. Render detects the `Dockerfile` automatically (Runtime: **Docker**).
+3. Under **Environment**, add:
+
+   | Key | Value |
+   | --- | --- |
+   | `GEMINI_API_KEY` | your Gemini API key |
+   | `DATABASE_URL` | your Neon PostgreSQL URL |
+   | `HF_TOKEN` | your Hugging Face token (TURN relay for the live mic) |
+
+4. Click **Deploy**. Your app is live at `https://<service-name>.onrender.com`.
+
+> Free Render services sleep after inactivity; the first request may take ~30–60 seconds.
 
 ---
 

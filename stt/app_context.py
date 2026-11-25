@@ -49,14 +49,24 @@ def require_api_key() -> str:
     return api_key
 
 
-def rtc_configuration() -> dict:
+def rtc_configuration() -> dict | None:
+    """ICE servers for WebRTC.
+
+    With a manual ``TURN_URL`` (comma-separated URLs allowed) that server is used. Otherwise ``None``
+    lets streamlit-webrtc pick a TURN provider from its own env vars: ``CLOUDFLARE_TURN_KEY_ID`` +
+    ``CLOUDFLARE_TURN_KEY_API_TOKEN``, ``TWILIO_ACCOUNT_SID`` + ``TWILIO_AUTH_TOKEN`` or ``HF_TOKEN``
+    (falling back to STUN only). A TURN relay is required on hosts such as Render that block UDP.
+    """
     settings = get_settings()
-    servers: list[dict] = [{"urls": ["stun:stun.l.google.com:19302"]}]
-    if settings.turn_url:
-        servers.append(
-            {"urls": [settings.turn_url], "username": settings.turn_username, "credential": settings.turn_credential}
-        )
-    return {"iceServers": servers}
+    if not settings.turn_url:
+        return None
+    turn_urls = [url.strip() for url in settings.turn_url.split(",") if url.strip()]
+    return {
+        "iceServers": [
+            {"urls": ["stun:stun.l.google.com:19302"]},
+            {"urls": turn_urls, "username": settings.turn_username, "credential": settings.turn_credential},
+        ]
+    }
 
 
 @st.cache_data(show_spinner="Generating speech...", max_entries=64)
